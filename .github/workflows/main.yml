@@ -49,9 +49,37 @@ jobs:
       - name: Sincronizar Capacitor
         run: npx cap sync android
 
+      - name: Configurar repositórios Maven de fallback
+        run: |
+          mkdir -p .github
+          cat > .github/gradle-repositories.init.gradle <<'GRADLE'
+          allprojects {
+              repositories {
+                  google()
+                  mavenCentral()
+                  maven { url = uri("https://repo1.maven.org/maven2") }
+              }
+              buildscript {
+                  repositories {
+                      google()
+                      mavenCentral()
+                      maven { url = uri("https://repo1.maven.org/maven2") }
+                  }
+              }
+          }
+          settingsEvaluated { settings ->
+              settings.pluginManagement.repositories {
+                  gradlePluginPortal()
+                  google()
+                  mavenCentral()
+                  maven { url = uri("https://repo1.maven.org/maven2") }
+              }
+          }
+          GRADLE
+
       - name: Gerar APK de teste
         working-directory: android
-        run: ./gradlew assembleDebug --no-daemon
+        run: ./gradlew assembleDebug --no-daemon --refresh-dependencies --init-script ../.github/gradle-repositories.init.gradle
 
       - name: Disponibilizar APK para download
         uses: actions/upload-artifact@v4
