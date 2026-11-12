@@ -1,1 +1,91 @@
+name: Gerar APK - CorridaBR Passageiro
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - master
+
+permissions:
+  contents: read
+
+jobs:
+  build-apk:
+    name: Compilar aplicativo Passageiro
+    runs-on: ubuntu-latest
+    steps:
+      - name: Baixar código do repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Configurar Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Instalar dependências
+        run: npm install
+
+      - name: Conferir arquivos do aplicativo
+        run: |
+          test -f package.json
+          test -f capacitor.config.json
+          test -f www/index.html
+
+      - name: Criar projeto Android
+        run: npx cap add android
+
+      - name: Adicionar permissões de internet e localização
+        run: |
+          MANIFEST=android/app/src/main/AndroidManifest.xml
+          sed -i 's|<application|<uses-permission android:name="android.permission.INTERNET" />\n    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />\n    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />\n    <uses-feature android:name="android.hardware.location.gps" android:required="false" />\n    <application|' "$MANIFEST"
+
+      - name: Sincronizar Capacitor
+        run: npx cap sync android
+
+      - name: Configurar repositórios Maven de fallback
+        run: |
+          mkdir -p .github
+          cat > .github/gradle-repositories.init.gradle <<'GRADLE'
+          allprojects {
+              repositories {
+                  google()
+                  mavenCentral()
+                  maven { url = uri("https://repo1.maven.org/maven2") }
+              }
+              buildscript {
+                  repositories {
+                      google()
+                      mavenCentral()
+                      maven { url = uri("https://repo1.maven.org/maven2") }
+                  }
+              }
+          }
+          settingsEvaluated { settings ->
+              settings.pluginManagement.repositories {
+                  gradlePluginPortal()
+                  google()
+                  mavenCentral()
+                  maven { url = uri("https://repo1.maven.org/maven2") }
+              }
+          }
+          GRADLE
+
+      - name: Gerar APK de teste
+        working-directory: android
+        run: ./gradlew assembleDebug --no-daemon --refresh-dependencies --init-script ../.github/gradle-repositories.init.gradle
+
+      - name: Disponibilizar APK para download
+        uses: actions/upload-artifact@v4
+        with:
+          name: CorridaBR-Passageiro-APK
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
 
