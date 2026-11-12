@@ -44,9 +44,22 @@
     <div id="menu" class="menu hidden">
       <div class="menu-panel">
         <div class="menu-head">
-          <div><b id="menu-name"></b><div class="muted" id="menu-phone"></div></div>
+          <b>Meu perfil</b>
           <button id="menu-close" class="link">Fechar</button>
         </div>
+        <div class="prof">
+          <div id="prof-avatar" class="prof-photo"></div>
+          <div class="grow">
+            <div class="muted" id="prof-rating"></div>
+            <div class="muted" id="prof-phone"></div>
+            <button id="btn-photo" class="link" type="button">📷 Trocar foto</button>
+          </div>
+        </div>
+        <input id="photo-input" type="file" accept="image/*" class="hidden">
+        <form id="f-name" class="name-row">
+          <input id="prof-name" type="text" minlength="2" maxlength="60" required autocomplete="name">
+          <button class="btn" type="submit">Salvar</button>
+        </form>
         <h3>Suas corridas</h3>
         <ul id="history" class="history"></ul>
         <button id="btn-logout" class="btn ghost">Sair da conta</button>

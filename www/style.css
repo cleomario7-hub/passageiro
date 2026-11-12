@@ -112,3 +112,17 @@ form input:focus, .search input:focus, select:focus { outline: none; border-colo
 
 .toast { position: fixed; z-index: 50; left: 50%; bottom: 110px; transform: translateX(-50%); background: #111827; color: #fff; padding: 11px 16px; border-radius: 12px; font-size: 14px; max-width: 88%; text-align: center; opacity: 0; pointer-events: none; transition: opacity .2s; }
 .toast.show { opacity: 1; }
+
+/* ---------- perfil com foto, carro e rota ---------- */
+img.avatar { display: block; object-fit: cover; background: #e5e7eb; }
+.avatar-lg { width: 76px; height: 76px; border-radius: 50%; background: var(--blue); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 30px; object-fit: cover; flex: none; }
+img.avatar-lg { display: block; background: #e5e7eb; }
+.prof { display: flex; gap: 14px; align-items: center; margin: 4px 0 12px; }
+.prof-photo { flex: none; line-height: 0; }
+.name-row { display: flex; gap: 8px; margin-bottom: 8px; }
+.name-row input { margin: 0; }
+.mid { display: flex; justify-content: center; margin: 8px 0; }
+.pax-row { display: flex; align-items: center; gap: 10px; margin: 6px 0; }
+.eta { font-weight: 700; color: var(--blue); margin: -4px 0 8px; }
+.car-marker { background: none; border: 0; }
+.car-rot { width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; transition: transform .6s linear; filter: drop-shadow(0 2px 3px rgba(0,0,0,.4)); }

@@ -25,6 +25,126 @@
   }
 
   /* ------------------------------------------------------------ */
+  /* Foto de perfil, carro desenhado e rota no mapa                */
+  /* ------------------------------------------------------------ */
+  function photoSrc(p) { return p ? API + p : ''; }
+  function avatarHtml(name, photo, cls) {
+    cls = cls || 'avatar';
+    if (photo) return '<img class="' + cls + '" src="' + esc(photoSrc(photo)) + '" alt="">';
+    return '<div class="' + cls + '">' + esc(String(name || '?').trim().charAt(0).toUpperCase()) + '</div>';
+  }
+
+  // Recorta a foto em quadrado, reduz para 320 px e converte para JPEG leve
+  function resizePhoto(file, done) {
+    var url = URL.createObjectURL(file), img = new Image();
+    img.onload = function () {
+      try {
+        var w = img.naturalWidth, h = img.naturalHeight, side = Math.min(w, h), size = Math.min(320, side);
+        var c = document.createElement('canvas');
+        c.width = c.height = size;
+        c.getContext('2d').drawImage(img, (w - side) / 2, (h - side) / 2, side, side, 0, 0, size, size);
+        var q = 0.85, out = c.toDataURL('image/jpeg', q);
+        while (out.length > 180000 && q > 0.4) { q -= 0.1; out = c.toDataURL('image/jpeg', q); }
+        URL.revokeObjectURL(url);
+        done(null, out);
+      } catch (e) { URL.revokeObjectURL(url); done(e); }
+    };
+    img.onerror = function () { URL.revokeObjectURL(url); done(new Error('Não foi possível abrir essa imagem')); };
+    img.src = url;
+  }
+
+  function bearingDeg(a, b) {
+    var rad = Math.PI / 180, y = Math.sin((b.lng - a.lng) * rad) * Math.cos(b.lat * rad);
+    var x = Math.cos(a.lat * rad) * Math.sin(b.lat * rad) - Math.sin(a.lat * rad) * Math.cos(b.lat * rad) * Math.cos((b.lng - a.lng) * rad);
+    return Math.round(((Math.atan2(y, x) / rad) + 360) % 360);
+  }
+  function distKm(a, b) {
+    var rad = Math.PI / 180, dLat = (b.lat - a.lat) * rad, dLng = (b.lng - a.lng) * rad;
+    var h = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(a.lat * rad) * Math.cos(b.lat * rad) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+    return 12742 * Math.asin(Math.sqrt(h));
+  }
+  function nearAngle(prev, next) { return prev + ((((next - prev) % 360) + 540) % 360) - 180; } // gira pelo lado mais curto
+
+  // Carro e moto vistos de cima (frente para cima = norte)
+  var CAR_SVG = '<svg viewBox="0 0 36 64" width="30" height="53" xmlns="http://www.w3.org/2000/svg">' +
+    '<ellipse cx="18" cy="35" rx="17" ry="29" fill="#000" opacity=".22"/>' +
+    '<rect x="2" y="9" width="6" height="13" rx="2.5" fill="#111827"/><rect x="28" y="9" width="6" height="13" rx="2.5" fill="#111827"/>' +
+    '<rect x="2" y="42" width="6" height="13" rx="2.5" fill="#111827"/><rect x="28" y="42" width="6" height="13" rx="2.5" fill="#111827"/>' +
+    '<path d="M18 2C28 2 31 8 31 17V48C31 58 27 62 18 62C9 62 5 58 5 48V17C5 8 8 2 18 2Z" fill="#0B5FFF" stroke="#fff" stroke-width="2"/>' +
+    '<path d="M9 21Q18 16 27 21L26 29Q18 26 10 29Z" fill="#1e293b"/>' +
+    '<rect x="9" y="31" width="18" height="11" rx="3" fill="#dbeafe"/>' +
+    '<path d="M10 45Q18 48 26 45L27 52Q18 55 9 52Z" fill="#1e293b"/>' +
+    '<circle cx="10" cy="6.5" r="2" fill="#fde047"/><circle cx="26" cy="6.5" r="2" fill="#fde047"/></svg>';
+  var MOTO_SVG = '<svg viewBox="0 0 28 64" width="22" height="50" xmlns="http://www.w3.org/2000/svg">' +
+    '<ellipse cx="14" cy="34" rx="12" ry="29" fill="#000" opacity=".22"/>' +
+    '<rect x="12" y="2" width="4" height="16" rx="2" fill="#111827"/><rect x="12" y="46" width="4" height="16" rx="2" fill="#111827"/>' +
+    '<rect x="3" y="15" width="22" height="4" rx="2" fill="#111827"/>' +
+    '<path d="M14 14C20 14 21 22 20 34C19 44 17 48 14 48C11 48 9 44 8 34C7 22 8 14 14 14Z" fill="#0B5FFF" stroke="#fff" stroke-width="2"/>' +
+    '<circle cx="14" cy="30" r="6" fill="#1e293b" stroke="#fff" stroke-width="1.5"/></svg>';
+
+  var carState = {};
+  function removeCar(key) {
+    var c = carState[key];
+    if (c) { cancelAnimationFrame(c.anim); if (map) map.removeLayer(c.marker); delete carState[key]; }
+  }
+  function slideTo(c, to) {
+    cancelAnimationFrame(c.anim);
+    var from = c.pos, t0 = performance.now(), dur = 3000;
+    if (!from || (from[0] === to[0] && from[1] === to[1]) || distKm({ lat: from[0], lng: from[1] }, { lat: to[0], lng: to[1] }) > 1.5) {
+      c.marker.setLatLng(to); c.pos = to; return;
+    }
+    (function step(t) {
+      var k = Math.max(0, Math.min(1, (t - t0) / dur));
+      var cur = [from[0] + (to[0] - from[0]) * k, from[1] + (to[1] - from[1]) * k];
+      c.marker.setLatLng(cur); c.pos = cur;
+      if (k < 1) c.anim = requestAnimationFrame(step);
+    })(t0);
+  }
+  // Desenha (ou move) o carro no mapa; "animate" faz ele deslizar suavemente entre uma posição e outra
+  function setCar(key, latlng, heading, cat, animate) {
+    if (!map) return;
+    if (!latlng) { removeCar(key); return; }
+    var c = carState[key];
+    if (c && c.cat !== cat) { removeCar(key); c = null; }
+    if (!c) {
+      var ic = L.divIcon({ className: 'car-marker', html: '<div class="car-rot">' + (cat === 'moto' ? MOTO_SVG : CAR_SVG) + '</div>', iconSize: [44, 44], iconAnchor: [22, 22] });
+      c = carState[key] = { marker: L.marker(latlng, { icon: ic, interactive: false, zIndexOffset: 1000 }).addTo(map), cat: cat, angle: 0, pos: latlng, anim: 0 };
+    } else if (animate) slideTo(c, latlng);
+    else { c.marker.setLatLng(latlng); c.pos = latlng; }
+    if (heading != null && isFinite(heading)) c.angle = nearAngle(c.angle, Number(heading));
+    var node = c.marker.getElement && c.marker.getElement();
+    if (node && node.firstChild) node.firstChild.style.transform = 'rotate(' + c.angle + 'deg)';
+  }
+
+  // Rota: trecho sólido azul (com contorno branco); quando há dois trechos, o 2º vai tracejado
+  var routeLayers = [];
+  var routeSig = '';
+  function clearRoute() {
+    routeLayers.forEach(function (l) { if (map) map.removeLayer(l); });
+    routeLayers = []; routeSig = '';
+  }
+  function drawLegs(legs, fitKey) {
+    if (!map || !legs || !legs.length) return;
+    var sig = legs.map(function (g) { var q = g.geometry; return g.type + q.length + ':' + q[0] + ':' + q[q.length - 1]; }).join('|');
+    if (sig !== routeSig) {
+      clearRoute(); routeSig = sig;
+      legs.forEach(function (g) {
+        if (!g.geometry || g.geometry.length < 2) return;
+        var dashed = g.type === 'trip' && legs.length > 1;
+        if (!dashed) routeLayers.push(L.polyline(g.geometry, { color: '#ffffff', weight: 9, opacity: 0.9, lineCap: 'round', lineJoin: 'round', interactive: false }).addTo(map));
+        routeLayers.push(L.polyline(g.geometry, dashed
+          ? { color: '#111827', weight: 4, opacity: 0.7, dashArray: '2 10', lineCap: 'round', interactive: false }
+          : { color: '#0B5FFF', weight: 5, opacity: 0.95, lineCap: 'round', lineJoin: 'round', interactive: false }).addTo(map));
+      });
+    }
+    if (fitKey) {
+      var all = [];
+      legs.forEach(function (g) { all = all.concat(g.geometry); });
+      fit(all, fitKey);
+    }
+  }
+
+  /* ------------------------------------------------------------ */
   /* Estado                                                        */
   /* ------------------------------------------------------------ */
   var token = store('brc_token') || '';
@@ -48,11 +168,12 @@
   var busy = false;
   var pollTimer = null;
   var rideSig = '';
-  var routeForRide = null; // id da corrida cujo trajeto já foi buscado
-  var rideRoute = null;
+  var etaMin = null; // minutos até o motorista chegar / até o destino
+  var routeFor = '';
+  var routeAt = 0;
+  var routeBusy = false;
   var markers = {};
-  var routeLine = null;
-  var lastFitKey = '';
+  var fitted = {};
 
   /* ------------------------------------------------------------ */
   /* API                                                           */
@@ -145,9 +266,6 @@
   function icon(cls, size) {
     return L.divIcon({ className: '', html: '<div class="' + cls + '"></div>', iconSize: [size, size], iconAnchor: [size / 2, size / 2] });
   }
-  function carIcon() {
-    return L.divIcon({ className: '', html: '<div class="mk-car">' + (ride && ride.category === 'moto' ? '🏍️' : '🚗') + '</div>', iconSize: [30, 30], iconAnchor: [15, 15] });
-  }
   function setMarker(key, latlng, ic) {
     if (!latlng) {
       if (markers[key]) { map.removeLayer(markers[key]); delete markers[key]; }
@@ -156,17 +274,13 @@
     if (markers[key]) { markers[key].setLatLng(latlng); markers[key].setIcon(ic); }
     else markers[key] = L.marker(latlng, { icon: ic, interactive: false }).addTo(map);
   }
-  function setRoute(geometry) {
-    if (routeLine) { map.removeLayer(routeLine); routeLine = null; }
-    if (geometry && geometry.length > 1) routeLine = L.polyline(geometry, { color: '#0B5FFF', weight: 5, opacity: 0.85 }).addTo(map);
-  }
   function ll(p) { return p ? [p.lat, p.lng] : null; }
 
   function fit(points, key) {
-    if (!map || lastFitKey === key) return;
-    lastFitKey = key;
+    if (!map || fitted[key]) return;
     var pts = points.filter(Boolean);
     if (!pts.length) return;
+    fitted[key] = true;
     var h = $('#sheet').offsetHeight;
     if (pts.length === 1) { map.setView(pts[0], 16); return; }
     map.fitBounds(L.latLngBounds(pts), { paddingTopLeft: [40, 80], paddingBottomRight: [40, h + 30], maxZoom: 17 });
@@ -178,22 +292,24 @@
     if (ride) {
       setMarker('from', ll(ride.from), icon('mk mk-from', 16));
       setMarker('to', ll(ride.to), icon('mk mk-to', 16));
-      setMarker('car', ride.driver && ride.driver.loc ? ll(ride.driver.loc) : null, carIcon());
-      setRoute(rideRoute);
+      var d = ride.driver && ride.driver.loc;
+      setCar('car', d ? ll(d) : null, d ? d.heading : null, ride.category, true);
       var key = 'ride-' + ride.id + '-' + ride.status;
-      if (ride.status === 'accepted' || ride.status === 'arrived') fit([ll(ride.driver && ride.driver.loc), ll(ride.from)], key);
-      else if (ride.status === 'ongoing') fit([ll(ride.driver && ride.driver.loc), ll(ride.to)], key);
-      else fit([ll(ride.from)], key);
+      if (ride.status === 'accepted' || ride.status === 'arrived') {
+        if (d) fit([ll(d), ll(ride.from)], key); else fit([ll(ride.from)], key + '-semcarro');
+      } else if (ride.status === 'ongoing') {
+        if (d) fit([ll(d), ll(ride.to)], key); else fit([ll(ride.to)], key + '-semcarro');
+      } else fit([ll(ride.from)], key);
       return;
     }
-    setMarker('car', null);
+    setCar('car', null);
     setMarker('from', mode === 'idle' && !dest ? null : ll(origin), icon('mk mk-from', 16));
     setMarker('to', ll(dest), icon('mk mk-to', 16));
     if (mode === 'choose' && estimate) {
-      setRoute(estimate.geometry);
+      drawLegs([{ type: 'trip', geometry: estimate.geometry }]);
       fit([ll(origin), ll(dest)], 'choose-' + origin.lat + dest.lat + dest.lng);
     } else {
-      setRoute(null);
+      clearRoute();
     }
   }
 
@@ -283,8 +399,6 @@
     busy = true;
     render();
     api('POST', '/api/rides', { from: origin, to: dest, category: category, payment: payment }).then(function (r) {
-      rideRoute = estimate.geometry;
-      routeForRide = r.ride.id;
       ride = r.ride;
       mode = 'idle'; results = []; query = '';
     }).catch(function (e) { toast(e.message); }).then(function () { busy = false; render(); });
@@ -300,9 +414,8 @@
   }
 
   function driverCard(d) {
-    var ini = esc((d.name || '?').trim().charAt(0).toUpperCase());
     var v = d.vehicle || {};
-    return '<div class="driver"><div class="avatar">' + ini + '</div><div class="grow"><b>' + esc(d.name) + '</b>' +
+    return '<div class="driver">' + avatarHtml(d.name, d.photo, 'avatar') + '<div class="grow"><b>' + esc(d.name) + '</b>' +
       (d.rating ? ' <span class="muted">★ ' + esc(d.rating) + '</span>' : '') +
       '<div class="muted">' + esc(v.model) + ' · ' + esc(v.color) + '</div><span class="plate">' + esc(v.plate) + '</span></div>' +
       '<a class="call" href="tel:' + esc(String(d.phone || '').replace(/\D/g, '')) + '">Ligar</a></div>';
@@ -353,13 +466,14 @@
         '<button class="btn danger" data-act="cancelRide">Cancelar pedido</button>';
     } else if (r.status === 'accepted' || r.status === 'arrived') {
       html += '<h2>' + (r.status === 'arrived' ? '🟢 Seu motorista chegou!' : 'Motorista a caminho') + '</h2>' +
+        (r.status === 'accepted' && etaMin ? '<p class="eta">Chega em ~' + etaMin + ' min</p>' : '') +
         (r.driver ? driverCard(r.driver) : '') +
         (r.pin ? '<div class="pin"><span class="muted">Diga este código ao motorista para iniciar</span><b>' + esc(r.pin) + '</b></div>' : '') +
         '<div class="place"><span class="dot k"></span><div class="grow">' + esc(r.to.address) + '</div><b>' + money(r.price) + '</b></div>' +
         '<p class="muted">Pagamento: ' + esc(PAY[r.payment] || r.payment) + '. Confira a placa antes de entrar.</p>' +
         '<button class="btn danger" data-act="cancelRide">Cancelar corrida</button>';
     } else if (r.status === 'ongoing') {
-      html += '<h2>Em viagem</h2>' + (r.driver ? driverCard(r.driver) : '') +
+      html += '<h2>Em viagem</h2>' + (etaMin ? '<p class="eta">Faltam ~' + etaMin + ' min</p>' : '') + (r.driver ? driverCard(r.driver) : '') +
         '<div class="place"><span class="dot k"></span><div class="grow"><small>Destino</small>' + esc(r.to.address) + '</div><b>' + money(r.price) + '</b></div>' +
         '<p class="muted">Pagamento: ' + esc(PAY[r.payment] || r.payment) + '. Pague ao motorista ao chegar.</p>';
     }
@@ -371,7 +485,7 @@
     var s = '';
     for (var i = 1; i <= 5; i++) s += '<button data-act="star" data-n="' + i + '" class="' + (i <= stars ? 'on' : '') + '" aria-label="' + i + ' estrelas">★</button>';
     return '<div class="grab"></div><div class="center"><h2>Chegamos! 🎉</h2><p class="muted">Corrida de ' + money(r.price) + ' · ' + esc(PAY[r.payment] || r.payment) + '</p>' +
-      '<p>Como foi a viagem com <b>' + esc(name) + '</b>?</p><div class="stars">' + s + '</div></div>' +
+      '<div class="mid">' + avatarHtml(name, r.driver && r.driver.photo, 'avatar-lg') + '</div><p>Como foi a viagem com <b>' + esc(name) + '</b>?</p><div class="stars">' + s + '</div></div>' +
       '<button class="btn big" data-act="sendRating"' + (stars ? '' : ' disabled') + '>Enviar avaliação</button>' +
       '<button class="link block center" data-act="skipRating">Agora não</button>';
   }
@@ -422,10 +536,52 @@
   $('#sheet').addEventListener('input', function (e) { if (e.target.id === 'q') query = e.target.value; });
   $('#sheet').addEventListener('change', function (e) { if (e.target.id === 'pay') payment = e.target.value; });
 
+  /* ---------- rota da corrida ---------- */
+  function refreshRoute() {
+    if (!ride) return;
+    var idAt = ride.id, key = ride.id + ':' + ride.status;
+    var moving = ride.status === 'accepted' || ride.status === 'ongoing';
+    var stale = Date.now() - routeAt > (moving ? 12000 : 60000);
+    if (routeBusy || (routeFor === key && !stale)) return;
+    routeBusy = true; routeFor = key;
+    api('GET', '/api/rides/' + idAt + '/route').then(function (r) {
+      if (!ride || ride.id !== idAt || ride.status !== r.status) return;
+      routeAt = Date.now();
+      drawLegs(r.legs, 'route-' + idAt + '-' + r.status);
+      var first = r.legs[0], m = null;
+      if (r.status === 'accepted' && first && first.type === 'pickup') m = first.min;
+      else if (r.status === 'ongoing' && first) m = first.min;
+      if (m !== etaMin) { etaMin = m; render(); }
+    }).catch(function () { /* tenta de novo no próximo ciclo */ }).then(function () { routeBusy = false; });
+  }
+
+  /* ---------- perfil ---------- */
+  function fillProfile() {
+    if (!me) return;
+    $('#prof-avatar').innerHTML = avatarHtml(me.name, me.photo, 'avatar-lg');
+    $('#prof-name').value = me.name;
+    $('#prof-phone').textContent = me.phone;
+    $('#prof-rating').textContent = me.rating ? '★ ' + me.rating + ' de avaliação' : 'Sem avaliações ainda';
+  }
+  $('#btn-photo').onclick = $('#prof-avatar').onclick = function () { $('#photo-input').click(); };
+  $('#photo-input').onchange = function (e) {
+    var f = e.target.files && e.target.files[0];
+    e.target.value = '';
+    if (!f) return;
+    toast('Enviando foto…');
+    resizePhoto(f, function (err, data) {
+      if (err) { toast(err.message || 'Não foi possível usar essa foto'); return; }
+      api('POST', '/api/me/photo', { image: data }).then(function (r) { me = r.user; fillProfile(); toast('Foto atualizada'); }).catch(function (er) { toast(er.message); });
+    });
+  };
+  $('#f-name').onsubmit = function (e) {
+    e.preventDefault();
+    api('POST', '/api/me/profile', { name: $('#prof-name').value }).then(function (r) { me = r.user; fillProfile(); toast('Nome atualizado'); }).catch(function (er) { toast(er.message); });
+  };
+
   /* ---------- menu / histórico ---------- */
   $('#btn-menu').onclick = function () {
-    $('#menu-name').textContent = me ? me.name : '';
-    $('#menu-phone').textContent = me ? me.phone : '';
+    fillProfile();
     $('#menu').classList.remove('hidden');
     var ul = $('#history');
     ul.innerHTML = '<li class="muted">Carregando…</li>';
@@ -446,7 +602,7 @@
   /* ------------------------------------------------------------ */
   function sigOf(r) {
     if (!r) return 'none';
-    return [r.id, r.status, r.pin, r.driver ? r.driver.name : '', r.driver ? r.driver.rating : ''].join('|');
+    return [r.id, r.status, r.pin, r.driver ? r.driver.name : '', r.driver ? r.driver.rating : '', r.driver ? r.driver.photo : '', etaMin].join('|');
   }
 
   var polling = false;
@@ -459,11 +615,7 @@
       pendingRating = s.pending_rating;
       if (s.last_ended && s.last_ended.status === 'no_driver') toast('Não encontramos motorista agora. Tente de novo em instantes.');
       if (prev && !ride && !pendingRating) toast('A corrida foi encerrada.');
-      if (ride && routeForRide !== ride.id) {
-        routeForRide = ride.id;
-        rideRoute = null;
-        api('POST', '/api/rides/estimate', { from: ride.from, to: ride.to }).then(function (r) { rideRoute = r.geometry; drawMap(); }, function () {});
-      }
+      if (!ride) { etaMin = null; routeFor = ''; } else refreshRoute();
       var sig = sigOf(ride) + '#' + (pendingRating ? pendingRating.id : '');
       if (sig !== rideSig) { rideSig = sig; if (ride) { dest = null; estimate = null; mode = 'idle'; } render(); }
       else drawMap(); // só atualiza a posição do carro no mapa
