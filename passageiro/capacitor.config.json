@@ -1,0 +1,8 @@
+{
+  "appId": "br.com.corridabr.passageiro",
+  "appName": "CorridaBR",
+  "webDir": "www",
+  "server": {
+    "androidScheme": "https"
+  }
+}
