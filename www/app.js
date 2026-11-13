@@ -11,7 +11,7 @@
   function money(n) { return 'R$ ' + Number(n).toFixed(2).replace('.', ','); }
   function store(k, v) { try { if (v === undefined) return localStorage.getItem(k); if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) { /* sem storage */ } return null; }
 
-  var PAY = { dinheiro: 'Dinheiro', pix_motorista: 'Pix (pagar ao motorista)' };
+  var PAY = { dinheiro: 'Dinheiro', pix_motorista: 'Pix ao motorista', mercadopago_pix: 'Pix no app (Mercado Pago)' };
   var ICON = { carro: '🚗', moto: '🏍️' };
   var STATUS_LABEL = { completed: 'Concluída', cancelled: 'Cancelada', no_driver: 'Sem motorista' };
 
@@ -484,7 +484,8 @@
     var r = pendingRating, name = r.driver ? r.driver.name : 'o motorista';
     var s = '';
     for (var i = 1; i <= 5; i++) s += '<button data-act="star" data-n="' + i + '" class="' + (i <= stars ? 'on' : '') + '" aria-label="' + i + ' estrelas">★</button>';
-    return '<div class="grab"></div><div class="center"><h2>Chegamos! 🎉</h2><p class="muted">Corrida de ' + money(r.price) + ' · ' + esc(PAY[r.payment] || r.payment) + '</p>' +
+    var pix = r.payment === 'mercadopago_pix' ? (r.payment_status === 'paid' ? '<p class="success">Pagamento Pix confirmado ✅</p>' : '<div class="card-note"><b>Pagamento Pix</b><p>Gere seu QR Code para pagar a CorridaBR com segurança.</p>' + (r.payment_qr_code_base64 ? '<img alt="QR Code Pix" style="display:block;max-width:220px;margin:12px auto" src="data:image/png;base64,' + esc(r.payment_qr_code_base64) + '">' : '') + (r.payment_qr_code ? '<textarea readonly rows="4">' + esc(r.payment_qr_code) + '</textarea><button class="btn" data-act="copyPix">Copiar Pix</button>' : '<input id="pix-email" type="email" placeholder="Seu e-mail para o Mercado Pago" value="' + esc(me && me.email || '') + '"><button class="btn big" data-act="createPix">Gerar Pix / Ver QR Code</button>') + (r.payment_ticket_url ? '<a class="link block" target="_blank" rel="noopener" href="' + esc(r.payment_ticket_url) + '">Abrir Mercado Pago</a>' : '') + '<p class="muted">A confirmação aparece automaticamente após o Mercado Pago confirmar.</p></div>') : '';
+    return '<div class="grab"></div><div class="center"><h2>Chegamos! 🎉</h2><p class="muted">Corrida de ' + money(r.price) + ' · ' + esc(PAY[r.payment] || r.payment) + '</p>' + pix +
       '<div class="mid">' + avatarHtml(name, r.driver && r.driver.photo, 'avatar-lg') + '</div><p>Como foi a viagem com <b>' + esc(name) + '</b>?</p><div class="stars">' + s + '</div></div>' +
       '<button class="btn big" data-act="sendRating"' + (stars ? '' : ' disabled') + '>Enviar avaliação</button>' +
       '<button class="link block center" data-act="skipRating">Agora não</button>';
@@ -521,6 +522,16 @@
       if (!confirm('Cancelar esta corrida?')) return;
       api('POST', '/api/rides/' + ride.id + '/cancel').then(function () { ride = null; render(); poll(); }).catch(function (err) { toast(err.message); });
     }
+    else if (act === 'createPix') {
+      var email = ($('#pix-email') && $('#pix-email').value || '').trim();
+      t.disabled = true; t.textContent = 'Gerando Pix…';
+      api('POST', '/api/rides/' + pendingRating.id + '/payment/pix', { email: email }).then(function (r) {
+        var box = $('#pix-result'); if (!box) return;
+        if (r.status === 'paid') { box.innerHTML = '<p class="success">Pagamento já confirmado ✅</p>'; return; }
+        box.innerHTML = (r.qr_code_base64 ? '<img alt="QR Code Pix" style="display:block;max-width:220px;margin:12px auto" src="data:image/png;base64,' + esc(r.qr_code_base64) + '">' : '') + '<textarea readonly rows="4">' + esc(r.qr_code || '') + '</textarea><button class="btn" data-act="copyPix">Copiar Pix</button>' + (r.ticket_url ? '<a class="link block" target="_blank" rel="noopener" href="' + esc(r.ticket_url) + '">Abrir Mercado Pago</a>' : '') + '<p class="muted">A confirmação aparece automaticamente após o Mercado Pago confirmar.</p>';
+      }).catch(function (err) { toast(err.message); }).then(function () { if (t.isConnected) { t.disabled = false; t.textContent = 'Gerar Pix / Ver QR Code'; } });
+    }
+    else if (act === 'copyPix') { var q = $('#pix-result textarea'); if (q) { q.select(); document.execCommand('copy'); toast('Código Pix copiado'); } }
     else if (act === 'star') { stars = Number(t.getAttribute('data-n')); render(); }
     else if (act === 'sendRating') {
       var id = pendingRating.id;
@@ -602,7 +613,7 @@
   /* ------------------------------------------------------------ */
   function sigOf(r) {
     if (!r) return 'none';
-    return [r.id, r.status, r.pin, r.driver ? r.driver.name : '', r.driver ? r.driver.rating : '', r.driver ? r.driver.photo : '', etaMin].join('|');
+    return [r.id, r.status, r.payment_status || '', r.payment_qr_code || '', r.pin, r.driver ? r.driver.name : '', r.driver ? r.driver.rating : '', r.driver ? r.driver.photo : '', etaMin].join('|');
   }
 
   var polling = false;
@@ -616,7 +627,7 @@
       if (s.last_ended && s.last_ended.status === 'no_driver') toast('Não encontramos motorista agora. Tente de novo em instantes.');
       if (prev && !ride && !pendingRating) toast('A corrida foi encerrada.');
       if (!ride) { etaMin = null; routeFor = ''; } else refreshRoute();
-      var sig = sigOf(ride) + '#' + (pendingRating ? pendingRating.id : '');
+      var sig = sigOf(ride) + '#' + (pendingRating ? pendingRating.id + ':' + (pendingRating.payment_status || '') : '');
       if (sig !== rideSig) { rideSig = sig; if (ride) { dest = null; estimate = null; mode = 'idle'; } render(); }
       else drawMap(); // só atualiza a posição do carro no mapa
     }).catch(function () { /* mantém o estado; tenta de novo no próximo ciclo */ }).then(function () { polling = false; });
