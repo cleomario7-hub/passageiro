@@ -41,6 +41,9 @@ jobs:
       - name: Criar projeto Android
         run: npx cap add android
 
+      - name: Aplicar ícone oficial CorridaBR no Android
+        run: node scripts/apply-icons.js
+
       - name: Adicionar permissões de internet e localização
         run: |
           MANIFEST=android/app/src/main/AndroidManifest.xml
@@ -88,4 +91,3 @@ jobs:
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
-
