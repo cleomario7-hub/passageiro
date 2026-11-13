@@ -591,20 +591,25 @@
   };
 
   /* ---------- menu / histórico ---------- */
-  $('#btn-menu').onclick = function () {
+  function openMenuTab(tab) {
     fillProfile();
     $('#menu').classList.remove('hidden');
-    var ul = $('#history');
-    ul.innerHTML = '<li class="muted">Carregando…</li>';
-    api('GET', '/api/rides/history').then(function (r) {
-      if (!r.rides.length) { ul.innerHTML = '<li class="muted">Você ainda não fez corridas.</li>'; return; }
-      ul.innerHTML = r.rides.map(function (x) {
-        var d = new Date(x.date);
-        return '<li class="st-' + esc(x.status) + '"><b>' + esc(d.toLocaleDateString('pt-BR')) + '</b> · ' + esc(STATUS_LABEL[x.status] || x.status) +
-          (x.status === 'completed' ? ' · ' + money(x.price) : '') + '<br><span class="muted">' + esc(x.from) + ' → ' + esc(x.to) + '</span></li>';
-      }).join('');
-    }).catch(function (e) { ul.innerHTML = '<li class="muted">' + esc(e.message) + '</li>'; });
-  };
+    ['profile','rides'].forEach(function (name) { $('#tab-' + name).classList.toggle('hidden', name !== tab); });
+    document.querySelectorAll('[data-menu-tab]').forEach(function (b) { b.classList.toggle('active', b.getAttribute('data-menu-tab') === tab); });
+    if (tab === 'rides') {
+      var ul = $('#history'); ul.innerHTML = '<li class="muted">Carregando…</li>';
+      api('GET', '/api/rides/history').then(function (r) {
+        if (!r.rides.length) { ul.innerHTML = '<li class="muted">Você ainda não fez corridas.</li>'; return; }
+        ul.innerHTML = r.rides.map(function (x) {
+          var d = new Date(x.date);
+          return '<li class="st-' + esc(x.status) + '"><b>' + esc(d.toLocaleDateString('pt-BR')) + '</b> · ' + esc(STATUS_LABEL[x.status] || x.status) +
+            (x.status === 'completed' ? ' · ' + money(x.price) : '') + '<br><span class="muted">' + esc(x.from) + ' → ' + esc(x.to) + '</span></li>';
+        }).join('');
+      }).catch(function (e) { ul.innerHTML = '<li class="muted">' + esc(e.message) + '</li>'; });
+    }
+  }
+  $('#btn-menu').onclick = function () { openMenuTab('profile'); };
+  document.querySelectorAll('[data-menu-tab]').forEach(function (b) { b.onclick = function () { openMenuTab(b.getAttribute('data-menu-tab')); }; });
   $('#menu-close').onclick = function () { $('#menu').classList.add('hidden'); };
   $('#menu').addEventListener('click', function (e) { if (e.target === $('#menu')) $('#menu').classList.add('hidden'); });
 

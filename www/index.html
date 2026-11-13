@@ -48,6 +48,7 @@
           <b>Meu perfil</b>
           <button id="menu-close" class="link">Fechar</button>
         </div>
+        <section id="tab-profile" class="menu-section">
         <div class="prof">
           <div id="prof-avatar" class="prof-photo"></div>
           <div class="grow">
@@ -61,11 +62,18 @@
           <input id="prof-name" type="text" minlength="2" maxlength="60" required autocomplete="name">
           <button class="btn" type="submit">Salvar</button>
         </form>
+        </section>
+        <section id="tab-rides" class="menu-section hidden">
         <h3>Suas corridas</h3>
         <ul id="history" class="history"></ul>
+        </section>
         <button id="btn-logout" class="btn ghost">Sair da conta</button>
       </div>
     </div>
+    <nav class="bottom-nav" aria-label="Navegação principal">
+      <button type="button" data-menu-tab="profile" class="active"><span>👤</span>Perfil</button>
+      <button type="button" data-menu-tab="rides"><span>🧾</span>Corridas</button>
+    </nav>
   </div>
 
   <div id="toast" class="toast"></div>
