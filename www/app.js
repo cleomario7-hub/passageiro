@@ -35,6 +35,45 @@
   }
 
   // Recorta a foto em quadrado, reduz para 320 px e converte para JPEG leve
+  function resizeDoc(file, done) {
+    var url = URL.createObjectURL(file), img = new Image();
+    img.onload = function () {
+      try {
+        var w = img.naturalWidth, h = img.naturalHeight, k = Math.min(1, 1600 / Math.max(w, h));
+        var c = document.createElement('canvas');
+        c.width = Math.round(w * k); c.height = Math.round(h * k);
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+        var q = 0.8, out = c.toDataURL('image/jpeg', q);
+        while (out.length > 1100000 && q > 0.35) { q -= 0.1; out = c.toDataURL('image/jpeg', q); }
+        URL.revokeObjectURL(url);
+        done(null, out);
+      } catch (e) { URL.revokeObjectURL(url); done(e); }
+    };
+    img.onerror = function () { URL.revokeObjectURL(url); done(new Error('Não foi possível abrir essa imagem')); };
+    img.src = url;
+  }
+  var ID_STATUS = { pending: 'Em análise', approved: 'Aprovado ✅', rejected: 'Reprovado ❌' };
+  function fillIdDoc() {
+    var box = $('#id-doc-box');
+    if (!box || !me) return;
+    var d = me.id_doc;
+    box.innerHTML = (d ? '<p><b>' + esc(d.kind === 'cnh' ? 'CNH' : 'RG') + '</b> · ' + esc(ID_STATUS[d.status] || d.status) + (d.note ? ' — ' + esc(d.note) : '') + '</p>' : '<p class="muted">Nenhum documento enviado.</p>') +
+      (d && d.status === 'approved' ? '' : '<div class="name-row"><select id="id-kind"><option value="rg">RG</option><option value="cnh">CNH</option></select><button id="btn-id-doc" class="btn" type="button">' + (d ? 'Reenviar' : 'Enviar foto') + '</button></div>');
+    var b = $('#btn-id-doc');
+    if (b) b.onclick = function () { $('#id-doc-input').click(); };
+  }
+  $('#id-doc-input').onchange = function (e) {
+    var f = e.target.files && e.target.files[0];
+    e.target.value = '';
+    if (!f) return;
+    var kind = $('#id-kind') ? $('#id-kind').value : 'rg';
+    toast('Enviando documento…');
+    resizeDoc(f, function (err, data) {
+      if (err) { toast(err.message || 'Não foi possível usar essa imagem'); return; }
+      api('POST', '/api/me/id-doc', { kind: kind, image: data }).then(function (r) { me = r.user; fillIdDoc(); toast('Documento enviado'); }).catch(function (er) { toast(er.message); });
+    });
+  };
+
   function resizePhoto(file, done) {
     var url = URL.createObjectURL(file), img = new Image();
     img.onload = function () {
@@ -422,7 +461,8 @@
   }
 
   function viewIdle() {
-    var html = '<div class="grab"></div><h2>Para onde vamos?</h2>' +
+    var idNote = me && (!me.id_doc || me.id_doc.status === 'rejected') && me.id_doc_required ? '<div class="card-note" data-act="openProfile">🪪 Envie seu RG ou CNH em Perfil para pedir corridas. <b>Toque aqui</b>.</div>' : '';
+    var html = '<div class="grab"></div><h2>Para onde vamos?</h2>' + idNote +
       '<div class="place"><span class="dot g"></span><div class="grow"><small>Embarque</small>' + esc(origin ? origin.address : 'Buscando sua localização…') +
       '</div><button class="link" data-act="pickOrigin">Alterar</button></div>' +
       '<form class="search" data-form="search"><input id="q" type="search" placeholder="Digite o destino (rua, bairro, local)" value="' + esc(query) + '" autocomplete="off"><button class="btn" type="submit"' + (busy ? ' disabled' : '') + '>Buscar</button></form>' +
@@ -516,6 +556,7 @@
       var r = results[Number(t.getAttribute('data-i'))];
       if (r) { dest = { lat: r.lat, lng: r.lng, address: r.address }; results = []; loadEstimate(); }
     }
+    else if (act === 'openProfile') { $('#btn-menu').click(); }
     else if (act === 'cat') { category = t.getAttribute('data-cat'); render(); }
     else if (act === 'request') requestRide();
     else if (act === 'back') { mode = 'idle'; dest = null; estimate = null; render(); }
@@ -579,6 +620,8 @@
     $('#prof-name').value = me.name;
     $('#prof-phone').textContent = me.phone;
     $('#prof-rating').textContent = me.rating ? '★ ' + me.rating + ' de avaliação' : 'Sem avaliações ainda';
+    fillIdDoc();
+    api('GET', '/api/me').then(function (r) { me = r.user; fillIdDoc(); }).catch(function () {});
   }
   $('#btn-photo').onclick = $('#prof-avatar').onclick = function () { $('#photo-input').click(); };
   $('#photo-input').onchange = function (e) {
