@@ -453,6 +453,7 @@
       }).join('') + '</div>' +
       '<select id="pay">' + Object.keys(PAY).map(function (k) { return '<option value="' + k + '"' + (k === payment ? ' selected' : '') + '>Pagamento: ' + esc(PAY[k]) + '</option>'; }).join('') + '</select>' +
       (estimate.approx ? '<p class="note">Valor aproximado: não foi possível traçar a rota exata agora. O preço final é confirmado ao pedir.</p>' : '') +
+      (estimate.fee_due > 0 ? '<p class="note">Inclui ' + money(estimate.fee_due) + ' de taxa de um cancelamento anterior.</p>' : '') +
       '<button class="btn big" data-act="request"' + (busy ? ' disabled' : '') + '>' + (busy ? 'Pedindo…' : 'Pedir ' + esc(sel.label) + ' · ' + money(sel.price)) + '</button>' +
       '<button class="link block" data-act="back">Voltar</button>';
   }
@@ -519,7 +520,11 @@
     else if (act === 'request') requestRide();
     else if (act === 'back') { mode = 'idle'; dest = null; estimate = null; render(); }
     else if (act === 'cancelRide') {
-      if (!confirm('Cancelar esta corrida?')) return;
+      var fee = ride.cancel_fee_now || 0;
+      var msg = fee > 0
+        ? 'Cancelar agora tem taxa de ' + money(fee) + ', cobrada na sua próxima corrida. Deseja cancelar mesmo assim?'
+        : (ride.status === 'searching' ? 'Cancelar este pedido?' : 'Cancelar esta corrida? Sem taxa até ' + Math.round((ride.cancel_free_s || 0) / 60 * 10) / 10 + ' min depois de o motorista aceitar; depois disso, ' + money(ride.cancel_fee || 0) + '.');
+      if (!confirm(msg)) return;
       api('POST', '/api/rides/' + ride.id + '/cancel').then(function () { ride = null; render(); poll(); }).catch(function (err) { toast(err.message); });
     }
     else if (act === 'createPix') {
