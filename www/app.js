@@ -274,6 +274,7 @@
   $('#f-register').onsubmit = function (e) { submitAuth(e, '/api/auth/register', {}); };
 
   function logout() {
+    if (window.CBRPush) CBRPush.stop(api);
     token = '';
     me = null;
     store('brc_token', null);
@@ -696,6 +697,7 @@
     initMap();
     map.invalidateSize();
     startGps();
+    if (window.CBRPush) CBRPush.start(api, function () { poll(); });
     render();
     poll();
     clearInterval(pollTimer);
