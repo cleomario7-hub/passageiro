@@ -11,7 +11,8 @@
   function money(n) { return 'R$ ' + Number(n).toFixed(2).replace('.', ','); }
   function store(k, v) { try { if (v === undefined) return localStorage.getItem(k); if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) { /* sem storage */ } return null; }
 
-  var PAY = { dinheiro: 'Dinheiro', pix_motorista: 'Pix ao motorista', mercadopago_pix: 'Pix no app (Mercado Pago)' };
+  var PAY = { mercadopago_pix: 'Pix no app (Mercado Pago)', pix_motorista: 'Pix ao motorista', dinheiro: 'Dinheiro' };
+  var PAY_HINT = { mercadopago_pix: 'Pague pelo app, sem dinheiro em mãos.', pix_motorista: 'Pague por Pix direto ao motorista ao chegar.', dinheiro: 'Pague em dinheiro ao motorista ao chegar.' };
   var ICON = { carro: '🚗', moto: '🏍️' };
   var STATUS_LABEL = { completed: 'Concluída', cancelled: 'Cancelada', no_driver: 'Sem motorista' };
 
@@ -196,7 +197,7 @@
   var dest = null;
   var estimate = null;
   var category = 'carro';
-  var payment = 'dinheiro';
+  var payment = 'mercadopago_pix'; // Pix no app é o pagamento principal
   var ride = null; // corrida ativa vinda do servidor
   var pendingRating = null;
   var skipRating = null;
@@ -275,6 +276,7 @@
 
   function logout() {
     if (window.CBRPush) CBRPush.stop(api);
+    CBRChat.setRide(null);
     token = '';
     me = null;
     store('brc_token', null);
@@ -458,7 +460,7 @@
     return '<div class="driver">' + avatarHtml(d.name, d.photo, 'avatar') + '<div class="grow"><b>' + esc(d.name) + '</b>' +
       (d.rating ? ' <span class="muted">★ ' + esc(d.rating) + '</span>' : '') +
       '<div class="muted">' + esc(v.model) + ' · ' + esc(v.color) + '</div><span class="plate">' + esc(v.plate) + '</span></div>' +
-      '<a class="call" href="tel:' + esc(String(d.phone || '').replace(/\D/g, '')) + '">Ligar</a></div>';
+      '<a class="call" href="tel:' + esc(String(d.phone || '').replace(/\D/g, '')) + '">Ligar</a></div>' + CBRChat.buttonHtml();
   }
 
   function viewIdle() {
@@ -492,7 +494,7 @@
       '<div class="opts">' + estimate.options.map(function (o) {
         return '<div class="opt' + (o.category === category ? ' sel' : '') + '" data-act="cat" data-cat="' + esc(o.category) + '"><span class="ic">' + (ICON[o.category] || '🚘') + '</span><span class="grow"><b>' + esc(o.label) + '</b></span><b>' + money(o.price) + '</b></div>';
       }).join('') + '</div>' +
-      '<select id="pay">' + Object.keys(PAY).map(function (k) { return '<option value="' + k + '"' + (k === payment ? ' selected' : '') + '>Pagamento: ' + esc(PAY[k]) + '</option>'; }).join('') + '</select>' +
+      '<select id="pay">' + Object.keys(PAY).map(function (k) { return '<option value="' + k + '"' + (k === payment ? ' selected' : '') + '>Pagamento: ' + esc(PAY[k]) + (k === 'mercadopago_pix' ? ' (recomendado)' : '') + '</option>'; }).join('') + '</select>' +
       (estimate.approx ? '<p class="note">Valor aproximado: não foi possível traçar a rota exata agora. O preço final é confirmado ao pedir.</p>' : '') +
       (estimate.fee_due > 0 ? '<p class="note">Inclui ' + money(estimate.fee_due) + ' de taxa de um cancelamento anterior.</p>' : '') +
       '<button class="btn big" data-act="request"' + (busy ? ' disabled' : '') + '>' + (busy ? 'Pedindo…' : 'Pedir ' + esc(sel.label) + ' · ' + money(sel.price)) + '</button>' +
@@ -516,8 +518,8 @@
         '<button class="btn danger" data-act="cancelRide">Cancelar corrida</button>';
     } else if (r.status === 'ongoing') {
       html += '<h2>Em viagem</h2>' + (etaMin ? '<p class="eta">Faltam ~' + etaMin + ' min</p>' : '') + (r.driver ? driverCard(r.driver) : '') +
-        '<div class="place"><span class="dot k"></span><div class="grow"><small>Destino</small>' + esc(r.to.address) + '</div><b>' + money(r.price) + '</b></div>' +
-        '<p class="muted">Pagamento: ' + esc(PAY[r.payment] || r.payment) + '. Pague ao motorista ao chegar.</p>';
+        '<div class="place"><span class="dot k"></span><div class="grow"><small>Destino</small>' + esc(r.to.address) + '</div><b>' + money(r.price) + '</b></div>' + CBRNav.html(r.to, 'Acompanhar a rota com') +
+        '<p class="muted">Pagamento: ' + esc(PAY[r.payment] || r.payment) + '. ' + esc(PAY_HINT[r.payment] || '') + '</p>';
     }
     return html;
   }
@@ -558,6 +560,7 @@
       if (r) { dest = { lat: r.lat, lng: r.lng, address: r.address }; results = []; loadEstimate(); }
     }
     else if (act === 'openProfile') { $('#btn-menu').click(); }
+    else if (act === 'openChat') { CBRChat.open(); }
     else if (act === 'cat') { category = t.getAttribute('data-cat'); render(); }
     else if (act === 'request') requestRide();
     else if (act === 'back') { mode = 'idle'; dest = null; estimate = null; render(); }
@@ -678,6 +681,7 @@
     api('GET', '/api/passenger/state').then(function (s) {
       var prev = ride;
       ride = s.active;
+      CBRChat.setRide(ride && ride.status !== 'searching' ? ride.id : null);
       pendingRating = s.pending_rating;
       if (s.last_ended && s.last_ended.status === 'no_driver') toast('Não encontramos motorista agora. Tente de novo em instantes.');
       if (prev && !ride && !pendingRating) toast('A corrida foi encerrada.');
@@ -697,7 +701,8 @@
     initMap();
     map.invalidateSize();
     startGps();
-    if (window.CBRPush) CBRPush.start(api, function () { poll(); });
+    CBRChat.init({ api: api, role: 'passenger' });
+    if (window.CBRPush) CBRPush.start(api, function () { poll(); CBRChat.refresh(); });
     render();
     poll();
     clearInterval(pollTimer);
