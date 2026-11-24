@@ -1,16 +1,16 @@
 {
-  "name": "corridabr-passageiro",
+  "name": "corridabr-motorista",
   "version": "1.0.0",
   "private": true,
-  "description": "App do passageiro — CorridaBR",
+  "description": "App do motorista — CorridaBR",
   "scripts": {
     "postinstall": "node scripts/copy-leaflet.js"
   },
   "dependencies": {
-    "@capacitor/android": "^6.2.0",
-    "@capacitor/cli": "^6.2.0",
-    "@capacitor/core": "^6.2.0",
-    "@capacitor/push-notifications": "^6.0.0",
+    "@capacitor/android": "^8.0.0",
+    "@capacitor/cli": "^8.0.0",
+    "@capacitor/core": "^8.0.0",
+    "@capacitor/push-notifications": "^8.0.0",
     "leaflet": "1.9.4"
   }
 }
