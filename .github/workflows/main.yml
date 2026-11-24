@@ -1,4 +1,4 @@
-name: Gerar APK - CorridaBR Motorista
+name: Gerar APK - CorridaBR Passageiro
 
 on:
   workflow_dispatch:
@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   build-apk:
-    name: Compilar aplicativo Motorista
+    name: Compilar aplicativo Passageiro
     runs-on: ubuntu-latest
     steps:
       - name: Baixar código do repositório
@@ -58,7 +58,7 @@ jobs:
       - name: Adicionar permissões de internet e localização
         run: |
           MANIFEST=android/app/src/main/AndroidManifest.xml
-          sed -i 's|<application|<uses-permission android:name="android.permission.INTERNET" />\n    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />\n    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />\n    <uses-feature android:name="android.hardware.location.gps" android:required="false" />\n    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />\n    <uses-permission android:name="android.permission.WAKE_LOCK" />\n    <uses-permission android:name="android.permission.VIBRATE" />\n    <application|' "$MANIFEST"
+          sed -i 's|<application|<uses-permission android:name="android.permission.INTERNET" />\n    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />\n    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />\n    <uses-feature android:name="android.hardware.location.gps" android:required="false" />\n    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />\n    <application|' "$MANIFEST"
 
       - name: Sincronizar Capacitor
         run: npx cap sync android
@@ -98,7 +98,7 @@ jobs:
       - name: Disponibilizar APK para download
         uses: actions/upload-artifact@v4
         with:
-          name: CorridaBR-Motorista-APK
+          name: CorridaBR-Passageiro-APK
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
